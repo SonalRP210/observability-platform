@@ -52,7 +52,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply placeholder
+      - name: Import Grafana dashboards
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
         run: |
-          echo "Applying observability assets to ${{ inputs.target_environment }}."
-          echo "Replace this step with Grafana/Prometheus provisioning commands."
+          if [ -z "$GRAFANA_URL" ] || [ -z "$GRAFANA_TOKEN" ]; then
+            echo "GRAFANA_URL and GRAFANA_TOKEN environment secrets are required."
+            exit 1
+          fi
+
+          shopt -s nullglob
+          files=(grafana/dashboards/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No dashboard files found in grafana/dashboards."
+            exit 0
+          fi
+
+          for dashboard in "${files[@]}"; do
+            echo "Importing $dashboard"
+            payload="$(python3 - <<'PY' "$dashboard"
+          import json
+          import pathlib
+          import sys
+
+          dashboard_path = pathlib.Path(sys.argv[1])
+          dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "dashboard": dashboard,
+              "overwrite": True
+          }))
+          PY
+            )"
+
+            response_code="$(curl -sS -o /tmp/grafana-import-response.json -w "%{http_code}" \
+              -X POST "$GRAFANA_URL/api/dashboards/db" \
+              -H "Authorization: Bearer $GRAFANA_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$payload")"
+
+            if [ "$response_code" -lt 200 ] || [ "$response_code" -ge 300 ]; then
+              echo "Dashboard import failed for $dashboard (HTTP $response_code)."
+              cat /tmp/grafana-import-response.json
+              exit 1
+            fi
+          done
+
+          echo "Successfully imported ${#files[@]} dashboard(s)."

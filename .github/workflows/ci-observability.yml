@@ -1,0 +1,55 @@
+name: Observability Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate-observability-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install promtool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y prometheus
+          promtool --version
+
+      - name: Validate Prometheus config files
+        run: |
+          if [ -f prometheus/config/prometheus.yml ]; then
+            promtool check config prometheus/config/prometheus.yml
+          fi
+          if [ -f prometheus/config/prometheus.loadtest-gateway-odds-betting.yml ]; then
+            promtool check config prometheus/config/prometheus.loadtest-gateway-odds-betting.yml
+          fi
+
+      - name: Validate Grafana dashboard JSON
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          dashboard_dir = pathlib.Path("grafana/dashboards")
+          files = list(dashboard_dir.glob("*.json")) if dashboard_dir.exists() else []
+          failures = []
+
+          for path in files:
+            try:
+              json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+              failures.append(f"{path}: {exc}")
+
+          if failures:
+            print("Dashboard validation failed:")
+            for failure in failures:
+              print(f" - {failure}")
+            sys.exit(1)
+
+          print(f"Validated {len(files)} dashboard JSON files.")
+          PY

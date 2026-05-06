@@ -1,0 +1,58 @@
+name: Observability Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Environment to apply observability assets to"
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - perf
+          - prod
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure key folders exist
+        run: |
+          test -d grafana/dashboards
+          test -d prometheus/config
+
+      - name: Validate Grafana dashboard JSON
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          files = list(pathlib.Path("grafana/dashboards").glob("*.json"))
+          for path in files:
+            try:
+              json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+              print(f"Invalid dashboard JSON: {path} -> {exc}")
+              sys.exit(1)
+
+          print(f"Validated {len(files)} dashboard JSON files.")
+          PY
+
+  apply:
+    needs:
+      - validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply placeholder
+        run: |
+          echo "Applying observability assets to ${{ inputs.target_environment }}."
+          echo "Replace this step with Grafana/Prometheus provisioning commands."

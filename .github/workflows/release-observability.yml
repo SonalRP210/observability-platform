@@ -20,6 +20,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install promtool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y prometheus
+          promtool --version
+
       - name: Ensure key folders exist
         run: |
           test -d grafana/dashboards
@@ -42,6 +48,20 @@ jobs:
 
           print(f"Validated {len(files)} dashboard JSON files.")
           PY
+
+      - name: Validate Prometheus config and rules
+        run: |
+          if [ -f prometheus/config/prometheus.yml ]; then
+            promtool check config prometheus/config/prometheus.yml
+          fi
+          if [ -f prometheus/config/prometheus.loadtest-gateway-odds-betting.yml ]; then
+            promtool check config prometheus/config/prometheus.loadtest-gateway-odds-betting.yml
+          fi
+          shopt -s nullglob
+          files=(prometheus/rules/*.yml prometheus/rules/*.yaml)
+          if [ ${#files[@]} -gt 0 ]; then
+            promtool check rules "${files[@]}"
+          fi
 
   apply:
     needs:
@@ -78,6 +98,8 @@ jobs:
 
           dashboard_path = pathlib.Path(sys.argv[1])
           dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+          # Grafana rejects imported dashboards with explicit id values.
+          dashboard["id"] = None
           print(json.dumps({
               "dashboard": dashboard,
               "overwrite": True

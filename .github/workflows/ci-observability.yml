@@ -28,6 +28,16 @@ jobs:
             promtool check config prometheus/config/prometheus.loadtest-gateway-odds-betting.yml
           fi
 
+      - name: Validate Prometheus rule files
+        run: |
+          shopt -s nullglob
+          files=(prometheus/rules/*.yml prometheus/rules/*.yaml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No Prometheus rule files found."
+            exit 0
+          fi
+          promtool check rules "${files[@]}"
+
       - name: Validate Grafana dashboard JSON
         run: |
           python - <<'PY'
